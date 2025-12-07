@@ -50,7 +50,20 @@ public:
         count--;
         return value;
     }
+      T front() const {
+        if (isEmpty()) {
+            throw std::runtime_error("Queue is empty");
+        }
+        return frontNode->data;
+    }
     
+    bool isEmpty() const {
+        return frontNode == nullptr;
+    }
+    
+    int size() const {
+        return count;
+    }
 };
 
 #endif 
