@@ -2,51 +2,50 @@
 #define FILEMANAGER_HPP
 
 #include <string>
+#include <vector>
 #include "HashMap.hpp"
+#include "FileEntry.hpp"
+
+class FileManagerDisk;
 
 class FileManager {
 private:
-    HashMap files;        // active memory
-    HashMap binFiles;     // recycle bin
+   private:
+    HashMap<FileEntry> files;       
+    HashMap<FileEntry> binFiles;     
     int nextFileId;
+    FileManagerDisk* disk;
+    int currentUserId;   
 
 public:
-    // Constructor
+   
     FileManager(int initialSize);
-
-    // Create a file
-    int createFile(const std::string& name, const std::string& content, long expireSeconds);
-
-    // Write / edit
-    bool writeFile(int fileId, const std::string& content);
-    bool editFile(int fileId, const std::string& content);
-
-    // Read
-    bool readFile(int fileId, std::string& outContent);
-
-    // Truncate
-    bool truncateFile(int fileId);
-
-    // Bin operations
-    bool moveToBin(int fileId);
-    bool retrieveFromBin(int fileId);
-
-    // Change timer
-    bool changeExpiry(int fileId, long newExpireSeconds);
-
-    // Search in both memories
-    FileEntry* searchFile(int fileId);
-
-    // Display all
+    void setCurrentUser(int userId);
+    
+   
+    int getCurrentUser() const;
+    void setDiskManager(FileManagerDisk* diskMgr);
+    bool createFile(const std::string& name, const std::string& content, long expireSeconds);
+    bool writeFile(const std::string& fileName, const std::string& content);
+    bool editFile(const std::string& fileName, const std::string& content);
+    
+   
+    bool readFile(const std::string& fileName, std::string& outContent);
+    
+    
+    bool truncateFile(const std::string& fileName);
+    bool moveToBin(const std::string& fileName);
+    bool moveToBinById(int fileId); 
+    bool retrieveFromBin(const std::string& fileName);
+    bool changeExpiry(const std::string& fileName, long newExpireSeconds);
+    FileEntry* searchFile(const std::string& fileName);
+    FileEntry* searchFileById(int fileId);
     void listFiles() const;
-     std::vector<FileEntry> getActiveFiles() const;
-    
-    // Get all bin files
+    std::vector<FileEntry> getActiveFiles() const;
     std::vector<FileEntry> getBinFiles() const;
-    
-    // Remove file completely from memory
-    bool removeFileCompletely(int fileId);
+    bool removeFileCompletely(const std::string& fileName);
+
     void loadFileEntry(const FileEntry& f);
 };
 
-#endif
+#endif 
