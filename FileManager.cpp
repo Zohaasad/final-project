@@ -25,4 +25,30 @@ bool FileManager::createFile(const std::string& name, const std::string& content
         std::cerr << "[FileManager] No user logged in!\n";
         return false;
     }
+
+    FileEntry* existing = searchFile(name);
+    if (existing) {
+        std::cerr << "[FileManager] File '" << name << "' already exists!\n";
+        return false;
+    }
+    
+    FileEntry f;
+    f.fileId = nextFileId++;
+    f.userId = currentUserId;
+    f.name = name;
+    f.content = content;
+    f.createTime = std::time(nullptr);
+    f.expireTime = f.createTime + expireSeconds;
+    f.inBin = false;
+    f.inUse = true;
+    
+    files.insert(f);
+    
+    
+    if (disk) {
+        disk->saveFile(f);
+    }
+    
+    return true;
+}
     
