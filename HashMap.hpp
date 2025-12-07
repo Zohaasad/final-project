@@ -133,7 +133,24 @@ public:
         }
         return all;
     }
-    
+    void display() const {
+        for (const auto &item : table) {
+            if (item.inUse) {
+                if constexpr (std::is_same<T, FileEntry>::value) {
+                    std::cout << "ID: " << item.fileId
+                              << ", Name: " << item.name
+                              << ", Created: " << item.createTime
+                              << ", Expires: " << item.expireTime
+                              << ", Content: " << item.content
+                              << "\n";
+                } else { 
+                    std::cout << "ID: " << item.userId
+                              << ", Username: " << item.username
+                              << "\n";
+                }
+            }
+        }
+    }
   
 };
 
