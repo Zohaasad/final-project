@@ -54,7 +54,6 @@ bool MinHeap::removeByFileId(int fileId) {
         if (heap[i].fileId == fileId) { idx = i; break; }
     }
     if (idx == -1) return false;
-    // replace with last and pop
     heap[idx] = heap.back();
     heap.pop_back();
     if (idx < (int)heap.size()) {
@@ -79,3 +78,4 @@ void MinHeap::display() const {
     }
     std::cout << "\n";
 }
+
