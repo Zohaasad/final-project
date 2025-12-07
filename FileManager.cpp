@@ -85,3 +85,32 @@ bool FileManager::truncateFile(const std::string& fileName) {
     
     return true;
 }
+
+bool FileManager::moveToBin(const std::string& fileName) {
+    FileEntry* f = searchFile(fileName);
+    if (!f) return false;
+    
+    f->inBin = true;
+    binFiles.insert(*f);
+    files.remove(f->fileId);
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
+bool FileManager::moveToBinById(int fileId) {
+    FileEntry* f = files.search(fileId);
+    if (!f) return false;
+    
+    f->inBin = true;
+    binFiles.insert(*f);
+    
+    files.remove(fileId);
+    
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
