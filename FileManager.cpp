@@ -70,3 +70,18 @@ bool FileManager::readFile(const std::string& fileName, std::string& outContent)
     outContent = f->content;
     return true;
 }
+
+bool FileManager::editFile(const std::string& fileName, const std::string& content) {
+    return writeFile(fileName, content);
+}
+bool FileManager::truncateFile(const std::string& fileName) {
+    FileEntry* f = searchFile(fileName);
+    if (!f || f->inBin) return false;
+    
+    f->content = "";
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
