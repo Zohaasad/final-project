@@ -5,15 +5,14 @@
 #include <ctime>
 
 struct FileEntry {
-    int fileId;
-    std::string name;        // instead of fileName
+    int fileId;          
+    int userId;          
+    std::string name;   
     std::string content;
-
     time_t createTime;
     time_t expireTime;
-
-    bool inBin = false;      // File is inside Recycle Bin
-    bool inUse = false;      // Used by HashMap only
+    bool inBin = false;  
+    bool inUse = false;  
 };
 
-#endif
+#endif 
