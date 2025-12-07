@@ -7,17 +7,16 @@
 #include <fstream>
 #include <string>
 #include <cstring>
-#include "FileEntry.hpp"  // Use the main FileEntry definition
+#include "FileEntry.hpp"  
 
 class BTreeNode {
 public:
     bool isLeaf;
     int t;
-    int n; // number of keys
+    int n; 
     FileEntry* keys;
-    long* childrenOffsets; // offsets of child nodes
-    long offset;           // offset of this node in file
-
+    long* childrenOffsets; 
+    long offset;          
     BTreeNode(int _t, bool _isLeaf);
     ~BTreeNode();
 
