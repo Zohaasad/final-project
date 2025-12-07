@@ -176,4 +176,99 @@ FileEntry* FileManager::searchFile(const std::string& fileName) {
     return nullptr;
 }
 
+FileEntry* FileManager::searchFileById(int fileId) {
+    FileEntry* f = files.search(fileId);
+    if (f) return f;
+    return binFiles.search(fileId);
+}
+
+
+void FileManager::listFiles() const {
+    if (currentUserId == -1) {
+        std::cout << "No user logged in!\n";
+        return;
+    }
+    
+    std::cout << "\n========== YOUR ACTIVE FILES ==========\n";
+    bool hasActive = false;
+    for (auto file : files.getAll()) {
+        if (file.userId == currentUserId && !file.inBin) {
+            hasActive = true;
+            std::cout << "File: " << file.name
+                      << "\n  Content: " << file.content
+                      << "\n  Created: " << ctime(&file.createTime)
+                      << "  Expires: " << ctime(&file.expireTime);
+        }
+    }
+    if (!hasActive) {
+        std::cout << "No active files.\n";
+    }
+    
+    std::cout << "\n========== YOUR FILES IN BIN ==========\n";
+    bool hasBin = false;
+    for (auto file : binFiles.getAll()) {
+        if (file.userId == currentUserId && file.inBin) {
+            hasBin = true;
+            std::cout << "File: " << file.name
+                      << "\n  Created: " << ctime(&file.createTime)
+                      << "  Expires: " << ctime(&file.expireTime);
+        }
+    }
+    if (!hasBin) {
+        std::cout << "No files in bin.\n";
+    }
+    std::cout << "=======================================\n\n";
+}
+
+std::vector<FileEntry> FileManager::getActiveFiles() const {
+    std::vector<FileEntry> userFiles;
+    for (auto f : files.getAll()) {
+        if (f.userId == currentUserId && !f.inBin) {
+            userFiles.push_back(f);
+        }
+    }
+    return userFiles;
+}
+
+std::vector<FileEntry> FileManager::getBinFiles() const {
+    std::vector<FileEntry> userFiles;
+    for (auto f : binFiles.getAll()) {
+        if (f.userId == currentUserId && f.inBin) {
+            userFiles.push_back(f);
+        }
+    }
+    return userFiles;
+}
+
+
+bool FileManager::removeFileCompletely(const std::string& fileName) {
+    FileEntry* f = searchFile(fileName);
+    if (!f) return false;
+    
+   
+    if (disk) {
+        disk->deleteFile(f->fileId);
+    }
+    
+    if (f->inBin) {
+        return binFiles.remove(f->fileId);
+    } else {
+        return files.remove(f->fileId);
+    }
+}
+
+
+void FileManager::loadFileEntry(const FileEntry& f) {
+    if (f.inBin) {
+        binFiles.insert(f);
+    } else {
+        files.insert(f);
+    }
+    
+  
+    if (f.fileId >= nextFileId) {
+        nextFileId = f.fileId + 1;
+    }
+}
+
 
