@@ -154,3 +154,26 @@ bool FileManager::changeExpiry(const std::string& fileName, long newExpireSecond
     
     return true;
 }
+
+
+FileEntry* FileManager::searchFile(const std::string& fileName) {
+    if (currentUserId == -1) return nullptr;
+    std::vector<FileEntry> allFiles = files.getAll();
+    for (auto& f : allFiles) {
+        if (f.name == fileName && f.userId == currentUserId && !f.inBin) {
+            return files.search(f.fileId);
+        }
+    }
+    
+
+    std::vector<FileEntry> allBin = binFiles.getAll();
+    for (auto& f : allBin) {
+        if (f.name == fileName && f.userId == currentUserId && f.inBin) {
+            return binFiles.search(f.fileId);
+        }
+    }
+    
+    return nullptr;
+}
+
+
