@@ -114,3 +114,43 @@ bool FileManager::moveToBinById(int fileId) {
     
     return true;
 }
+
+bool FileManager::retrieveFromBin(const std::string& fileName) {
+    std::vector<FileEntry> allBin = binFiles.getAll();
+    FileEntry* f = nullptr;
+    
+    for (auto& entry : allBin) {
+        if (entry.name == fileName && entry.userId == currentUserId && entry.inBin) {
+            f = binFiles.search(entry.fileId);
+            break;
+        }
+    }
+    
+    if (!f) return false;
+    
+    long duration = f->expireTime - f->createTime;
+    f->inBin = false;
+    f->createTime = std::time(nullptr);
+    f->expireTime = f->createTime + duration;
+    
+    files.insert(*f);
+    binFiles.remove(f->fileId);
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
+bool FileManager::changeExpiry(const std::string& fileName, long newExpireSeconds) {
+    FileEntry* f = searchFile(fileName);
+    if (!f || f->inBin) return false;
+    
+    f->expireTime = std::time(nullptr) + newExpireSeconds;
+    
+    
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
