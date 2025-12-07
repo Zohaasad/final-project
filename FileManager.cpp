@@ -51,4 +51,22 @@ bool FileManager::createFile(const std::string& name, const std::string& content
     
     return true;
 }
+
+
+bool FileManager::writeFile(const std::string& fileName, const std::string& content) {
+    FileEntry* f = searchFile(fileName);
+    if (!f || f->inBin) return false;
     
+    f->content = content;
+    if (disk) {
+        disk->updateFile(*f);
+    }
+    
+    return true;
+}
+bool FileManager::readFile(const std::string& fileName, std::string& outContent) {
+    FileEntry* f = searchFile(fileName);
+    if (!f || f->inBin) return false;
+    outContent = f->content;
+    return true;
+}
