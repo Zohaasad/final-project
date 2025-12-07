@@ -9,3 +9,13 @@ FileManager::FileManager(int initialSize)
 void FileManager::setCurrentUser(int userId) {
     currentUserId = userId;
 }
+
+int FileManager::getCurrentUser() const {
+    return currentUserId;
+}
+
+
+void FileManager::setDiskManager(FileManagerDisk* diskMgr) {
+    disk = diskMgr;
+}
+
