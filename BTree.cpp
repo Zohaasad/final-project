@@ -1,7 +1,6 @@
 #include "BTree.hpp"
 #include <ctime>
 
-// ================== BTreeNode ==================
 BTreeNode::BTreeNode(int _t, bool _isLeaf) {
     t = _t;
     isLeaf = _isLeaf;
@@ -111,7 +110,6 @@ while(i>=0 && keys[i].fileId>entry.fileId) i--;
     }
 }
 
-// ================== BTree ==================
 BTree::BTree(int _t, const std::string &_filename) {
     t = _t;
     filename = _filename;
@@ -120,19 +118,3 @@ BTree::BTree(int _t, const std::string &_filename) {
     if(!file.is_open()) file.open(filename,std::ios::out|std::ios::binary);
     root->writeNode(file);
 }
-
-BTree::~BTree() { if(file.is_open()) file.close(); delete root; }
-
-void BTree::insert(const FileEntry &entry) {
-    if(root->n==2*t-1){
-        BTreeNode* s = new BTreeNode(t,false);
-        s->childrenOffsets[0]=root->offset;
-        s->splitChild(0, root, file);
-        root=s;
-        root->insertNonFull(entry, file);
-    } else root->insertNonFull(entry, file);
-}
-
-FileEntry* BTree::search(int id) { return root->search(id, file); }
-
-void BTree::traverse() { root->traverse(file); }
