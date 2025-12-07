@@ -19,3 +19,10 @@ void FileManager::setDiskManager(FileManagerDisk* diskMgr) {
     disk = diskMgr;
 }
 
+
+bool FileManager::createFile(const std::string& name, const std::string& content, long expireSeconds) {
+    if (currentUserId == -1) {
+        std::cerr << "[FileManager] No user logged in!\n";
+        return false;
+    }
+    
