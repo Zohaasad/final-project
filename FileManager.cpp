@@ -5,3 +5,7 @@
 FileManager::FileManager(int initialSize)
     : files(initialSize), binFiles(initialSize), nextFileId(1), disk(nullptr), currentUserId(-1) {}
 
+
+void FileManager::setCurrentUser(int userId) {
+    currentUserId = userId;
+}
