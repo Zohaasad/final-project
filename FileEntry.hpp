@@ -7,12 +7,14 @@
 struct FileEntry {
     int fileId;          
     int userId;          
-    std::string name;   
+    std::string name;    
     std::string content;
     time_t createTime;
     time_t expireTime;
     bool inBin = false;  
     bool inUse = false;  
+    int ownerId;
+ bool expired;
 };
 
-#endif 
+#endif
