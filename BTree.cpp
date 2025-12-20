@@ -210,6 +210,7 @@ BTree::BTree(int _t, const std::string &_filename) {
     filename = _filename;
     root = nullptr;
 
+   
     file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
     if(!file.is_open()) {
         std::cout << "[BTree] Creating new B-tree file: " << filename << "\n";
@@ -217,6 +218,7 @@ BTree::BTree(int _t, const std::string &_filename) {
         file.close();
         file.open(filename, std::ios::in|std::ios::out|std::ios::binary);
     }
+
 
     file.seekg(0, std::ios::end);
     long fileSize = file.tellg();
