@@ -1,7 +1,6 @@
 
 #include "BTree.hpp"
 
-// ================== BTreeNode ==================
 BTreeNode::BTreeNode(int _t, bool _isLeaf) {
     t = _t;
     isLeaf = _isLeaf;
@@ -51,12 +50,12 @@ FileIndexEntry* BTreeNode::search(int fileId, std::fstream &file) {
     }
     
     if(isLeaf) {
-        std::cout << "[BTree] File " << fileId << " not found (leaf node)\n";
+        std::cout << "[BTree] File " << fileId << " not found in leaf node\n";
         return nullptr;
     }
 
     if(childrenOffsets[i] == -1) {
-        std::cout << "[BTree] File " << fileId << " not found (null child)\n";
+        std::cout << "[BTree] File " << fileId << " not found (null child pointer)\n";
         return nullptr;
     }
 
@@ -99,7 +98,6 @@ void BTreeNode::splitChild(int i, BTreeNode* y, std::fstream &file) {
 
     y->n = t-1;
     
-    // **FIX: Write nodes to disk FIRST to get their offsets**
     y->writeNode(file);
     z->writeNode(file);
 
@@ -111,7 +109,6 @@ void BTreeNode::splitChild(int i, BTreeNode* y, std::fstream &file) {
 
     n++;
     
-    // **FIX: Write parent node after updating**
     writeNode(file);
 
     delete z;
@@ -121,18 +118,19 @@ void BTreeNode::insertNonFull(const FileIndexEntry &entry, std::fstream &file) {
     int i = n-1;
 
     if(isLeaf) {
-        // Check for duplicate and update
+        // Check if this file ID already exists - UPDATE instead of insert
         for(int k = 0; k < n; k++) {
             if(keys[k].fileId == entry.fileId) {
+                std::cout << "[BTree] ✓ UPDATING existing entry: File " << entry.fileId 
+                          << " (block " << keys[k].firstBlock << " → " << entry.firstBlock << ")\n";
                 keys[k].firstBlock = entry.firstBlock;
                 keys[k].inUse = true;
                 writeNode(file);
-                std::cout << "[BTree] Updated existing entry for file " << entry.fileId << "\n";
                 return;
             }
         }
         
-        // Insert new entry
+        // Not found - insert new entry
         while(i >=0 && keys[i].fileId > entry.fileId) { 
             keys[i+1] = keys[i]; 
             i--; 
@@ -140,7 +138,7 @@ void BTreeNode::insertNonFull(const FileIndexEntry &entry, std::fstream &file) {
         keys[i+1] = entry; 
         n++;
         writeNode(file);
-        std::cout << "[BTree] Inserted new entry for file " << entry.fileId << "\n";
+        std::cout << "[BTree] ✓ INSERTED new entry: File " << entry.fileId << " at block " << entry.firstBlock << "\n";
     } else {
         while(i >= 0 && keys[i].fileId > entry.fileId) i--;
         i++;
@@ -204,13 +202,14 @@ void BTreeNode::collectFileIds(std::fstream &file, std::vector<int>& ids) {
     }
 }
 
-// ================== BTree ==================
+// ==================== BTree Implementation ====================
+
 BTree::BTree(int _t, const std::string &_filename) {
     t = _t;
     filename = _filename;
     root = nullptr;
+    rootOffset = -1;
 
-   
     file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
     if(!file.is_open()) {
         std::cout << "[BTree] Creating new B-tree file: " << filename << "\n";
@@ -219,26 +218,29 @@ BTree::BTree(int _t, const std::string &_filename) {
         file.open(filename, std::ios::in|std::ios::out|std::ios::binary);
     }
 
-
     file.seekg(0, std::ios::end);
     long fileSize = file.tellg();
     
     std::cout << "[BTree] B-tree file size: " << fileSize << " bytes\n";
     
     if(fileSize >= sizeof(long)) {
-        // Read root offset from file header
+        // Read root offset from beginning of file
         file.seekg(0);
         file.read(reinterpret_cast<char*>(&rootOffset), sizeof(long));
         
         std::cout << "[BTree] Root offset read from disk: " << rootOffset << "\n";
         
-        if (rootOffset > 0) {
+        // Validate root offset
+        if (rootOffset >= sizeof(long) && rootOffset < fileSize) {
             root = new BTreeNode(t,true);
             root->readNode(file, rootOffset);
-            std::cout << "[BTree] Loaded existing B-tree with " << root->n << " keys in root\n";
+            std::cout << "[BTree] ✓ Loaded existing B-tree root with " << root->n << " keys\n";
         } else {
             std::cout << "[BTree] Invalid root offset, creating new root\n";
             root = new BTreeNode(t,true);
+            // Write root node AFTER the root offset header (at position sizeof(long))
+            file.seekp(sizeof(long), std::ios::beg);
+            root->offset = file.tellp();
             root->writeNode(file);
             rootOffset = root->offset;
             writeRoot();
@@ -247,10 +249,15 @@ BTree::BTree(int _t, const std::string &_filename) {
         // New B-tree file
         std::cout << "[BTree] Initializing new B-tree\n";
         root = new BTreeNode(t,true);
+        
+        // Reserve space for root offset at beginning
+        file.seekp(sizeof(long), std::ios::beg);
+        root->offset = file.tellp();
         root->writeNode(file);
         rootOffset = root->offset;
         writeRoot();
-        std::cout << "[BTree] New root created at offset: " << rootOffset << "\n";
+        
+        std::cout << "[BTree] ✓ New root created at offset: " << rootOffset << "\n";
     }
 }
 
@@ -261,46 +268,53 @@ BTree::~BTree() {
 }
 
 void BTree::writeRoot() {
+    // Write root offset at the very beginning of the file
     file.seekp(0);
     file.write(reinterpret_cast<char*>(&rootOffset), sizeof(long));
     file.flush();
-    std::cout << "[BTree] Root offset written to disk: " << rootOffset << "\n";
+    std::cout << "[BTree] Root offset saved to disk: " << rootOffset << "\n";
 }
 
 void BTree::insert(int fileId, int firstBlock) {
-    std::cout << "[BTree] ===== Inserting file " << fileId << " -> block " << firstBlock << " =====\n";
+    std::cout << "\n[BTree] ===== Inserting/Updating file " << fileId << " -> block " << firstBlock << " =====\n";
     
     FileIndexEntry entry(fileId, firstBlock);
 
+    // Check if root is full and needs splitting
     if(root->n == 2*t-1) {
-        std::cout << "[BTree] Root is full, splitting...\n";
+        std::cout << "[BTree] Root is full (" << root->n << " keys), splitting...\n";
         
-        BTreeNode* newRoot = new BTreeNode(t,false);
+        // Create new root
+        BTreeNode* newRoot = new BTreeNode(t, false);
         
-        // **FIX: Write old root first to ensure it has valid offset**
-        root->writeNode(file);
+        // Old root becomes first child of new root
+        long oldRootOffset = root->offset;
+        newRoot->childrenOffsets[0] = oldRootOffset;
         
-        newRoot->childrenOffsets[0] = root->offset;
+        // Write new root to get its offset (after current end of file)
+        file.seekp(0, std::ios::end);
+        newRoot->offset = file.tellp();
+        newRoot->writeNode(file);
+        
+        // Split the old root (which is now child[0] of new root)
         newRoot->splitChild(0, root, file);
         
-        // **FIX: New root is written in splitChild, update offset**
+        // Update root pointer
         rootOffset = newRoot->offset;
-        
-        BTreeNode* oldRoot = root;
+        delete root;
         root = newRoot;
-        delete oldRoot;
         
         writeRoot();
-        std::cout << "[BTree] New root created at offset: " << rootOffset << "\n";
+        std::cout << "[BTree] ✓ New root created at offset: " << rootOffset << "\n";
     }
 
+    // Now insert into the (possibly new) root
     root->insertNonFull(entry, file);
     
-    // **FIX: Ensure root offset is updated (in case root node was moved)** 
-    rootOffset = root->offset;
-    writeRoot();
+    // Ensure root is written
+    root->writeNode(file);
     
-    std::cout << "[BTree] ===== Insert complete. Root offset: " << rootOffset << " =====\n";
+    std::cout << "[BTree] ===== Insert/Update complete =====\n\n";
 }
 
 FileIndexEntry* BTree::search(int fileId) {
@@ -309,9 +323,9 @@ FileIndexEntry* BTree::search(int fileId) {
         return nullptr;
     }
     
-    std::cout << "[BTree] Searching for file " << fileId << "...\n";
+    std::cout << "[BTree] Searching for file " << fileId << " (root has " << root->n << " keys)...\n";
     
-    // **FIX: Always read root from disk to get latest state**
+    // Always read fresh root data from disk
     root->readNode(file, rootOffset);
     
     return root->search(fileId, file);
@@ -322,16 +336,16 @@ bool BTree::remove(int fileId) {
     
     std::cout << "[BTree] Removing file " << fileId << "\n";
     
-    // **FIX: Read root from disk first**
+    // Refresh root from disk
     root->readNode(file, rootOffset);
     
-    return root->removeKey(fileId,file);
+    return root->removeKey(fileId, file);
 }
 
 std::vector<int> BTree::getAllFileIds() {
     std::vector<int> ids;
     if(root) {
-        // **FIX: Read root from disk first**
+        // Refresh root from disk
         root->readNode(file, rootOffset);
         root->collectFileIds(file, ids);
     }
