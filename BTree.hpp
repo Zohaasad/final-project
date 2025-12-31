@@ -14,12 +14,12 @@ struct FileIndexEntry {
 
 class BTreeNode {
 public:
-    int t; // minimum degree
+    int t; 
     bool isLeaf;
-    int n; // number of keys
+    int n; 
     FileIndexEntry* keys;
     long* childrenOffsets;
-    long offset; // position in file
+    long offset; 
 
     BTreeNode(int _t, bool _isLeaf);
     ~BTreeNode();
@@ -51,7 +51,7 @@ public:
     std::vector<int> getAllFileIds();
     void traverse();
 private:
-    long rootOffset; // stored in file header
+    long rootOffset; 
     void readRoot();
     void writeRoot();
 };
