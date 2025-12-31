@@ -1,4 +1,3 @@
-
 #ifndef HASHMAP_HPP
 #define HASHMAP_HPP
 
@@ -83,7 +82,7 @@ public:
             if constexpr (std::is_same<T, FileEntry>::value) {
                 if (table[idx].fileId == key)
                     return &table[idx];
-            } else {
+            } else { 
                 if (table[idx].userId == key)
                     return &table[idx];
             }
@@ -115,7 +114,14 @@ public:
         count--;
         return true;
     }
-    
+    bool remove(const std::string& key) {
+    T* item = search(key);
+    if (!item) return false;
+    item->inUse = false;
+    count--;
+    return true;
+}
+
     bool edit(int key, const std::string &newContent) {
         T* item = search(key);
         if (!item) return false;
@@ -133,6 +139,7 @@ public:
         }
         return all;
     }
+    
     void display() const {
         for (const auto &item : table) {
             if (item.inUse) {
@@ -151,7 +158,6 @@ public:
             }
         }
     }
-  
 };
 
 #endif 
