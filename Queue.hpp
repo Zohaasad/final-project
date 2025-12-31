@@ -50,7 +50,8 @@ public:
         count--;
         return value;
     }
-      T front() const {
+    
+    T front() const {
         if (isEmpty()) {
             throw std::runtime_error("Queue is empty");
         }
