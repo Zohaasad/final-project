@@ -1,274 +1,414 @@
+
 #include "FileManager.hpp"
-#include "FileManagerDisk.hpp"
+#include <algorithm>
 #include <iostream>
 #include <ctime>
-FileManager::FileManager(int initialSize)
-    : files(initialSize), binFiles(initialSize), nextFileId(1), disk(nullptr), currentUserId(-1) {}
 
+FileManager::FileManager(int userId)
+    : currentUserId(userId), diskManager(nullptr), expiryHeap(), fileMap(100) {}
 
 void FileManager::setCurrentUser(int userId) {
     currentUserId = userId;
 }
 
-int FileManager::getCurrentUser() const {
-    return currentUserId;
+void FileManager::setDiskManager(FileManagerDisk* dm) {
+    diskManager = dm;
 }
 
-
-void FileManager::setDiskManager(FileManagerDisk* diskMgr) {
-    disk = diskMgr;
-}
-
-
-bool FileManager::createFile(const std::string& name, const std::string& content, long expireSeconds) {
-    if (currentUserId == -1) {
-        std::cerr << "[FileManager] No user logged in!\n";
-        return false;
-    }
-
-    FileEntry* existing = searchFile(name);
-    if (existing) {
-        std::cerr << "[FileManager] File '" << name << "' already exists!\n";
+bool FileManager::loadUserFiles(int userId) {
+    if (!diskManager) {
+        std::cerr << "[FileManager] No disk manager set!\n";
         return false;
     }
     
+    std::cout << "[FileManager] Loading files for user " << userId << "...\n";
+    std::vector<int> allFileIds = diskManager->getAllFileIds();
+    
+    time_t now = std::time(nullptr);
+    int loadedCount = 0;
+    int activeCount = 0;
+    int binCount = 0;
+    
+    for (int fileId : allFileIds) {
+ 
+        FileEntry* diskFile = diskManager->loadFile(fileId);
+        if (!diskFile) continue;
+        if (diskFile->userId != userId) {
+            delete diskFile;
+            continue;
+        }
+        if (fileMap.search(fileId) != nullptr) {
+            std::cout << "[FileManager] File " << fileId << " already in memory, skipping\n";
+            delete diskFile;
+            continue;
+        }
+        if (diskFile->expireTime < now) {
+            diskFile->inBin = true;
+            diskFile->inUse = true;
+            diskManager->updateFile(*diskFile);
+            binCount++;
+            std::cout << "[FileManager] File '" << diskFile->name << "' expired, loaded to BIN\n";
+        } else {
+          
+            diskFile->inBin = false;
+            diskFile->inUse = true;
+            activeCount++;
+            std::cout << "[FileManager] File '" << diskFile->name << "' loaded as ACTIVE\n";
+        }
+        
+     
+        if (fileMap.insert(*diskFile)) {
+  
+            if (!diskFile->inBin) {
+                FileEntry* filePtr = fileMap.search(fileId);
+                if (filePtr) {
+                    expiryHeap.push(filePtr);
+                }
+            }
+        }
+        
+        delete diskFile;
+        loadedCount++;
+    }
+    
+    std::cout << "[FileManager] Loaded " << loadedCount << " files for user " << userId 
+              << " (" << activeCount << " active, " << binCount << " in bin)\n";
+    
+    return true;
+}
+
+void FileManager::unloadUserFiles(int userId) {
+    std::cout << "[FileManager] Unloading files for user " << userId << "...\n";
+    
+    std::vector<FileEntry> allFiles = fileMap.getAll();
+    int removedCount = 0;
+    
+    for (auto& file : allFiles) {
+        if (file.userId == userId) {
+         
+            if (!file.inBin) {
+                FileEntry* filePtr = fileMap.search(file.fileId);
+                if (filePtr) {
+                    expiryHeap.remove(filePtr);
+                }
+            }
+            
+          
+            fileMap.remove(file.fileId);
+            removedCount++;
+            
+            std::cout << "[FileManager] Removed file '" << file.name << "' from memory\n";
+        }
+    }
+    
+    std::cout << "[FileManager] Unloaded " << removedCount << " files for user " << userId << "\n";
+}
+
+bool FileManager::createFile(const std::string& name, const std::string& content, long expireSeconds) {
+    if (name.empty()) {
+        std::cerr << "[FileManager] Cannot create file with empty name.\n";
+        return false;
+    }
+
+    std::vector<FileEntry> allFiles = fileMap.getAll();
+    for (auto& f : allFiles) {
+        if (f.userId == currentUserId && f.name == name && !f.inBin) {
+            std::cerr << "[FileManager] File with name '" << name << "' already exists.\n";
+            return false;
+        }
+    }
+
+    int maxId = 0;
+    if (diskManager) {
+        std::vector<int> allFileIds = diskManager->getAllFileIds();
+        for (int id : allFileIds) {
+            if (id > maxId) maxId = id;
+        }
+    }
+    
+    for (auto& existing : allFiles) {
+        if (existing.fileId > maxId) maxId = existing.fileId;
+    }
+
     FileEntry f;
-    f.fileId = nextFileId++;
+    f.fileId = maxId + 1;
     f.userId = currentUserId;
+    f.ownerId = currentUserId;
     f.name = name;
     f.content = content;
     f.createTime = std::time(nullptr);
     f.expireTime = f.createTime + expireSeconds;
     f.inBin = false;
     f.inUse = true;
-    
-    files.insert(f);
-    
-    
-    if (disk) {
-        disk->saveFile(f);
+    f.expired = false;
+
+    if (diskManager) {
+        if (!diskManager->saveFile(f)) {
+            std::cerr << "[FileManager] CRITICAL: Failed to save file to disk!\n";
+            return false;
+        }
+        std::cout << "[FileManager] File '" << name << "' saved to disk (ID: " << f.fileId << ")\n";
     }
-    
+    if (!fileMap.insert(f)) {
+        std::cerr << "[FileManager] Failed to insert file into HashMap.\n";
+        return false;
+    }
+    FileEntry* filePtr = fileMap.search(f.fileId);
+    if (filePtr) {
+        expiryHeap.push(filePtr);
+    }
+
+    std::cout << "[FileManager] File '" << name << "' created in memory (ID: " << f.fileId << ")\n";
+
     return true;
 }
 
-
-bool FileManager::writeFile(const std::string& fileName, const std::string& content) {
-    FileEntry* f = searchFile(fileName);
-    if (!f || f->inBin) return false;
+bool FileManager::writeFile(const std::string& name, const std::string& content) {
+    FileEntry* f = searchFile(name);
+    if (!f) {
+        std::cerr << "[FileManager] File '" << name << "' not found.\n";
+        return false;
+    }
     
+    if (f->inBin) {
+        std::cerr << "[FileManager] Cannot write to file in bin.\n";
+        return false;
+    }
+
     f->content = content;
-    if (disk) {
-        disk->updateFile(*f);
-    }
     
-    return true;
-}
-bool FileManager::readFile(const std::string& fileName, std::string& outContent) {
-    FileEntry* f = searchFile(fileName);
-    if (!f || f->inBin) return false;
-    outContent = f->content;
-    return true;
-}
-
-bool FileManager::editFile(const std::string& fileName, const std::string& content) {
-    return writeFile(fileName, content);
-}
-bool FileManager::truncateFile(const std::string& fileName) {
-    FileEntry* f = searchFile(fileName);
-    if (!f || f->inBin) return false;
-    
-    f->content = "";
-    if (disk) {
-        disk->updateFile(*f);
+    if (diskManager) {
+        if (!diskManager->saveFile(*f)) {
+            std::cerr << "[FileManager] CRITICAL: Failed to update file on disk!\n";
+            return false;
+        }
+        std::cout << "[FileManager] File '" << name << "' updated on disk.\n";
     }
     
     return true;
 }
 
-bool FileManager::moveToBin(const std::string& fileName) {
-    FileEntry* f = searchFile(fileName);
+bool FileManager::readFile(const std::string& name, std::string& content) {
+    FileEntry* f = searchFile(name);
     if (!f) return false;
-    
-    f->inBin = true;
-    binFiles.insert(*f);
-    files.remove(f->fileId);
-    if (disk) {
-        disk->updateFile(*f);
-    }
-    
+    if (f->inBin) return false;
+
+    content = f->content;
     return true;
 }
-bool FileManager::moveToBinById(int fileId) {
-    FileEntry* f = files.search(fileId);
+
+bool FileManager::truncateFile(const std::string& name) {
+    FileEntry* f = searchFile(name);
     if (!f) return false;
+    if (f->inBin) return false;
+
+    f->content.clear();
     
-    f->inBin = true;
-    binFiles.insert(*f);
-    
-    files.remove(fileId);
-    
-    if (disk) {
-        disk->updateFile(*f);
+    if (diskManager) {
+        if (!diskManager->saveFile(*f)) {
+            std::cerr << "[FileManager] CRITICAL: Failed to truncate file on disk!\n";
+            return false;
+        }
+        std::cout << "[FileManager] File '" << name << "' truncated on disk.\n";
     }
     
     return true;
 }
 
-bool FileManager::retrieveFromBin(const std::string& fileName) {
-    std::vector<FileEntry> allBin = binFiles.getAll();
-    FileEntry* f = nullptr;
-    
-    for (auto& entry : allBin) {
-        if (entry.name == fileName && entry.userId == currentUserId && entry.inBin) {
-            f = binFiles.search(entry.fileId);
-            break;
+bool FileManager::moveToBin(const std::string& name) {
+    FileEntry* f = searchFile(name);
+    if (!f) return false;
+    if (f->inBin) return false;
+
+    expiryHeap.remove(f);
+
+    f->inBin = true;
+    f->inUse = true;
+
+    if (diskManager) {
+        if (!diskManager->updateFile(*f)) {
+            std::cerr << "[FileManager] CRITICAL: Failed to update file status on disk!\n";
+            return false;
         }
     }
     
-    if (!f) return false;
+    std::cout << "[FileManager] File '" << name << "' moved to bin.\n";
+    return true;
+}
+
+bool FileManager::retrieveFromBin(const std::string& name) {
+    FileEntry* f = searchFile(name);
+    if (!f) {
+        std::cerr << "[FileManager] File '" << name << "' not found.\n";
+        return false;
+    }
     
-    long duration = f->expireTime - f->createTime;
+    if (!f->inBin) {
+        std::cerr << "[FileManager] File '" << name << "' is not in bin.\n";
+        return false;
+    }
+
     f->inBin = false;
-    f->createTime = std::time(nullptr);
-    f->expireTime = f->createTime + duration;
-    
-    files.insert(*f);
-    binFiles.remove(f->fileId);
-    if (disk) {
-        disk->updateFile(*f);
+    f->inUse = true;
+
+    long remainingTime = f->expireTime - std::time(nullptr);
+    if (remainingTime <= 0) {
+        f->expireTime = std::time(nullptr) + 3600; 
+        std::cout << "[FileManager] File was expired. Expiry reset to 1 hour from now.\n";
+    }
+
+    expiryHeap.push(f);
+
+    if (diskManager) {
+        if (!diskManager->updateFile(*f)) {
+            std::cerr << "[FileManager] CRITICAL: Failed to update file status on disk!\n";
+            return false;
+        }
     }
     
-    return true;
-}
-bool FileManager::changeExpiry(const std::string& fileName, long newExpireSeconds) {
-    FileEntry* f = searchFile(fileName);
-    if (!f || f->inBin) return false;
-    
-    f->expireTime = std::time(nullptr) + newExpireSeconds;
-    
-    
-    if (disk) {
-        disk->updateFile(*f);
-    }
-    
+    std::cout << "[FileManager] File '" << name << "' retrieved from bin.\n";
     return true;
 }
 
+void FileManager::updateExpiryStatus() {
+    time_t now = std::time(nullptr);
+    
+    while (!expiryHeap.isEmpty()) {
+        FileEntry* f = expiryHeap.peek();
+        if (!f) break;
+        
+        if (f->expireTime > now) break;
 
-FileEntry* FileManager::searchFile(const std::string& fileName) {
-    if (currentUserId == -1) return nullptr;
-    std::vector<FileEntry> allFiles = files.getAll();
+        expiryHeap.extractMin();
+        
+        f->inBin = true;
+        f->inUse = true;
+
+        if (diskManager) {
+            diskManager->updateFile(*f);
+        }
+        
+        std::cout << "[AUTO-EXPIRY] File '" << f->name << "' (ID: " << f->fileId << ") expired and moved to bin.\n";
+    }
+}
+
+FileEntry* FileManager::searchFile(const std::string& name) {
+   
+    std::vector<FileEntry> allFiles = fileMap.getAll();
     for (auto& f : allFiles) {
-        if (f.name == fileName && f.userId == currentUserId && !f.inBin) {
-            return files.search(f.fileId);
+        if (f.userId == currentUserId && f.name == name) {
+            return fileMap.search(f.fileId);
         }
     }
-    
-
-    std::vector<FileEntry> allBin = binFiles.getAll();
-    for (auto& f : allBin) {
-        if (f.name == fileName && f.userId == currentUserId && f.inBin) {
-            return binFiles.search(f.fileId);
-        }
-    }
-    
     return nullptr;
 }
 
 FileEntry* FileManager::searchFileById(int fileId) {
-    FileEntry* f = files.search(fileId);
-    if (f) return f;
-    return binFiles.search(fileId);
+    // Direct lookup by ID in HashMap
+    FileEntry* f = fileMap.search(fileId);
+    if (f && f->inUse) {
+        return f;
+    }
+    return nullptr;
 }
 
-
-void FileManager::listFiles() const {
-    if (currentUserId == -1) {
-        std::cout << "No user logged in!\n";
-        return;
-    }
-    
-    std::cout << "\n========== YOUR ACTIVE FILES ==========\n";
-    bool hasActive = false;
-    for (auto file : files.getAll()) {
-        if (file.userId == currentUserId && !file.inBin) {
-            hasActive = true;
-            std::cout << "File: " << file.name
-                      << "\n  Content: " << file.content
-                      << "\n  Created: " << ctime(&file.createTime)
-                      << "  Expires: " << ctime(&file.expireTime);
-        }
-    }
-    if (!hasActive) {
-        std::cout << "No active files.\n";
-    }
-    
-    std::cout << "\n========== YOUR FILES IN BIN ==========\n";
-    bool hasBin = false;
-    for (auto file : binFiles.getAll()) {
-        if (file.userId == currentUserId && file.inBin) {
-            hasBin = true;
-            std::cout << "File: " << file.name
-                      << "\n  Created: " << ctime(&file.createTime)
-                      << "  Expires: " << ctime(&file.expireTime);
-        }
-    }
-    if (!hasBin) {
-        std::cout << "No files in bin.\n";
-    }
-    std::cout << "=======================================\n\n";
+bool FileManager::restoreFile(int fileId, const std::string& name, const std::string& content, 
+                              long expireSeconds, int ownerId, bool wasInBin, 
+                              time_t originalCreateTime, time_t originalExpireTime) {
+    std::cerr << "[FileManager] restoreFile() is deprecated. Use loadUserFiles() instead.\n";
+    return false;
 }
 
 std::vector<FileEntry> FileManager::getActiveFiles() const {
-    std::vector<FileEntry> userFiles;
-    for (auto f : files.getAll()) {
-        if (f.userId == currentUserId && !f.inBin) {
-            userFiles.push_back(f);
+    std::vector<FileEntry> active;
+    std::vector<FileEntry> allFiles = fileMap.getAll();
+    
+    for (const auto& f : allFiles) {
+        if (f.userId == currentUserId && !f.inBin && f.inUse) {
+            active.push_back(f);
         }
     }
-    return userFiles;
+    return active;
 }
 
 std::vector<FileEntry> FileManager::getBinFiles() const {
-    std::vector<FileEntry> userFiles;
-    for (auto f : binFiles.getAll()) {
-        if (f.userId == currentUserId && f.inBin) {
-            userFiles.push_back(f);
+    std::vector<FileEntry> binFiles;
+    std::vector<FileEntry> allFiles = fileMap.getAll();
+    
+    for (const auto& f : allFiles) {
+        if (f.userId == currentUserId && f.inBin && f.inUse) {
+            binFiles.push_back(f);
         }
     }
-    return userFiles;
+    return binFiles;
 }
 
+void FileManager::displayAllFiles() const {
+    std::cout << "\n========== Active Files ==========\n";
+    auto activeFiles = getActiveFiles();
+    if (activeFiles.empty()) {
+        std::cout << "No active files.\n";
+    } else {
+        for (const auto& f : activeFiles) {
+            std::cout << "ID: " << f.fileId 
+                      << " | Name: " << f.name 
+                      << " | Size: " << f.content.size() << " bytes"
+                      << " | Expires: " << f.expireTime << "\n";
+        }
+    }
 
-bool FileManager::removeFileCompletely(const std::string& fileName) {
-    FileEntry* f = searchFile(fileName);
+    std::cout << "\n========== Files in Bin ==========\n";
+    auto binFiles = getBinFiles();
+    if (binFiles.empty()) {
+        std::cout << "No files in bin.\n";
+    } else {
+        for (const auto& f : binFiles) {
+            std::cout << "ID: " << f.fileId 
+                      << " | Name: " << f.name 
+                      << " | Size: " << f.content.size() << " bytes\n";
+        }
+    }
+    std::cout << "==================================\n\n";
+}
+
+bool FileManager::changeExpiry(const std::string& name, long newExpireSeconds) {
+    FileEntry* f = searchFile(name);
     if (!f) return false;
+    if (f->inBin) return false;
+
+    f->expireTime = std::time(nullptr) + newExpireSeconds;
     
-   
-    if (disk) {
-        disk->deleteFile(f->fileId);
+
+    expiryHeap.update(f);
+    
+    if (diskManager) {
+        diskManager->updateFile(*f);
     }
     
-    if (f->inBin) {
-        return binFiles.remove(f->fileId);
-    } else {
-        return files.remove(f->fileId);
-    }
+    return true;
 }
 
+bool FileManager::removeFileCompletely(const std::string& name) {
+    FileEntry* f = searchFile(name);
+    if (!f) return false;
 
-void FileManager::loadFileEntry(const FileEntry& f) {
-    if (f.inBin) {
-        binFiles.insert(f);
-    } else {
-        files.insert(f);
+    int fileId = f->fileId;
+    bool wasInBin = f->inBin;
+
+    if (diskManager) {
+        if (!diskManager->deleteFile(fileId)) {
+            std::cerr << "[FileManager] Failed to delete file from disk!\n";
+            return false;
+        }
     }
-    
-  
-    if (f.fileId >= nextFileId) {
-        nextFileId = f.fileId + 1;
+    if (!wasInBin) {
+        expiryHeap.remove(f);
     }
+    if (!fileMap.remove(fileId)) {
+        std::cerr << "[FileManager] Failed to remove file from HashMap!\n";
+        return false;
+    }
+
+    std::cout << "[FileManager] File '" << name << "' permanently deleted.\n";
+    return true;
 }
-
-
