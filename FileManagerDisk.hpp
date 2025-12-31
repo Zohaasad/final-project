@@ -1,3 +1,4 @@
+
 #ifndef FILEMANAGERDISK_HPP
 #define FILEMANAGERDISK_HPP
 
@@ -9,8 +10,8 @@
 #include "FileManager.hpp"
 #include "BTree.hpp"
 
-const long DISK_SIZE = 2L * 1024 * 1024 * 1024; // 2 GB
-const int BLOCK_SIZE = 50 * 1024;               // 50 KB
+const long DISK_SIZE = 2L * 1024 * 1024 * 1024; 
+const int BLOCK_SIZE = 50 * 1024;               
 const int TOTAL_BLOCKS = DISK_SIZE / BLOCK_SIZE;
 
 struct BlockMetadata {
@@ -21,6 +22,7 @@ struct BlockMetadata {
 };
 
 class FileManager;
+
 class FileManagerDisk {
 private:
     std::string diskFilePath;
@@ -29,7 +31,7 @@ private:
     int usedBlocks;
     std::vector<bool> blockBitmap;
     BTree* btree;
-
+    
     bool initializeDisk();
     void saveBitmap();
     void loadBitmap();
@@ -42,17 +44,24 @@ private:
 public:
     FileManagerDisk(const std::string& diskPath);
     ~FileManagerDisk();
-
+    
     bool saveFile(const FileEntry& f);
     FileEntry* loadFile(int fileId);
     bool deleteFile(int fileId);
     bool updateFile(const FileEntry& f);
     bool loadAllFiles(FileManager& fm);
-
+    
     int getUsedBlocks() const;
     int getFreeBlocks() const;
     void printDiskStats() const;
+    
+
+    std::vector<int> getAllFileIds() {
+        if (btree) {
+            return btree->getAllFileIds();
+        }
+        return std::vector<int>();
+    }
 };
 
 #endif
-
